@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from scipy import linalg
 from scipy import signal
 from scipy.fftpack import fft, ifft, fftshift, ifftshift
+from mayavi import mlab
 
 def stepFunc(x):
     """Heaviside function - couldn't find a native function that could handle arrays"""
@@ -129,7 +130,7 @@ def tomPlot2D(data, x, y, dr):
     """Plot (1) image in dB with user-specified dynamic range, dr and (2) two orthogonal 1-D slices through middle of non-log data"""
     pfnormlog = 20*np.log10(np.abs(data))
     pfnormlog = np.transpose(np.squeeze(pfnormlog))  #reduce to 2-dimensions, transposed to match plot in paper
-    
+
     fig1 = plt.figure()
     plt.imshow(pfnormlog, extent=[x[0]*1e3,x[-1]*1e3,y[-1]*1e3,y[0]*1e3], vmin=-dr, vmax=0, cmap='gray')
     plt.xlabel('x(mm)')
@@ -151,6 +152,63 @@ def tomPlot2D(data, x, y, dr):
     plt.show()
     return
 
+def perfTomog3d(prec, xd, t, c=1484):
+    res = 300e-6 #350e-6  #desired spatial resolution (m)
+    xf = arange2(xd[0],xd[-1]+res,res) # (m) choose reconstruction space to be directly above detector array
+    yf = xf.copy() 
+    zf = arange2(11*1e-3,19*1e-3+res,res) #z location of targets, set as target plane by default. You can create a 3-D field by making this an array
+    Yf, Xf, Zf = np.meshgrid(yf, xf, zf)
+    Zf2 = Zf**2
+
+    fs = 1/(t[1]-t[0])  #sampl freq
+    NFFT = 2**nextpow2(prec.shape[0])
+    fv = fs/2*np.linspace(0,1,NFFT/2+1)
+    fv2 = -np.flipud(fv)  #for
+    fv2 = np.delete(fv2,0)
+    fv2 = np.delete(fv2,-1)
+    fv3 = np.concatenate((fv,fv2),0)  #ramp filter for positive and negative freq components
+    k = 2*np.pi*fv3/c #wave vector
+
+    ds = (2e-3)**2  #active area of sensor
+    pf = np.empty([len(k)])
+    pnum = 0
+    pden = 0
+    yd = xd.copy()
+    
+    for xi in range(len(xd)):
+        X2 = (Xf-xd[xi])**2  
+        for yi in range(len(yd)):  #index detector
+            dist = np.sqrt(X2+(Yf-yd[yi])**2+Zf2) #distance from detector to each pixel in imaging field
+            distind = np.round(dist*(fs/c)) #convert distance to index
+            distind = distind.astype(int) #convert to integer for indexing
+            p = prec[:,xi,yi]
+            pf = ifft(-1j*k*fft(p,NFFT)) #apply ramp filter
+            b = 2*p-2*t*c*pf[0:len(p)]
+            b1 = b[distind-1]  #subtracted 1 to be consistent with Matlab result wherein indexing begins at 1    
+            omega = (ds/dist**2)*Zf/dist
+            pnum = pnum + omega*b1
+            pden = pden + omega
+        print('Reconstructing image with detector row',len(xd)-xi)
+    pg = pnum/pden
+    pgmax = pg[np.nonzero(np.abs(pg) == np.amax(abs(pg)))]   #np.amax(complex array) will return the element with maximum real value, not maximum absolute value as in Matlab
+    pfnorm = np.real(pg/pgmax)
+    return pfnorm, xf, yf, zf
+
+def tomPlot3D(data, x, y, z, dr):
+    """Plot (1) image in dB with user-specified dynamic range, dr and (2) two orthogonal 1-D slices through middle of non-log data"""
+    pfnormlog = 20*np.log10(np.abs(data))
+    #pfnormlog = np.transpose(np.squeeze(pfnormlog))  #reduce to 2-dimensions, transposed to match plot in paper
+    
+
+    src = mlab.pipeline.scalar_field(pfnormlog)
+    #mlab.pipeline.iso_surface(src, contours=[pfnormlog.min()+0.1*pfnormlog.ptp(), ], opacity=0.3)
+    for i in range(20):
+        mlab.pipeline.iso_surface(src, contours=[pfnormlog.max()-0.0025*i*pfnormlog.ptp(), ],opacity=1-i/40,color=(1-i/40,1-i/40,1-i/40))
+    
+    mlab.show()
+    return
+
+
 if __name__ == '__main__':
     #define (x,y,z) position and radius  of spherical targets. Detector plane is at z = 0
     zTargs = 15  #target plane height (mm)
@@ -169,9 +227,13 @@ if __name__ == '__main__':
     for jj in range(tarInfo.shape[0]):
         print('Generating recorded signals arising from target', jj+1, 'of', tarInfo.shape[0])
         sigs = sigs + getSignals(tarInfo[jj,:], xd, t)
-        
-    pfnorm, xf, yf, zf = perfTomog(sigs, xd, t, zTargs*1e-3)
     
-    tomPlot2D(pfnorm, xf, yf, 6)
+    isThreeD = True
+    if isThreeD:
+        pfnorm, xf, yf, zf = perfTomog3d(sigs, xd, t)
+        tomPlot3D(pfnorm, xf, yf, zf, 6)
+    else:
+        pfnorm, xf, yf, zf = perfTomog(sigs, xd, t, 17*1e-3)
+        tomPlot2D(pfnorm, xf, yf, 6)
 
 
