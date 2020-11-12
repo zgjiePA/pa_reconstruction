@@ -14,6 +14,7 @@ from scipy import linalg
 from scipy import signal
 from scipy.fftpack import fft, ifft, fftshift, ifftshift
 from mayavi import mlab
+import argparse
 
 def stepFunc(x):
     """Heaviside function - couldn't find a native function that could handle arrays"""
@@ -152,11 +153,11 @@ def tomPlot2D(data, x, y, dr):
     plt.show()
     return
 
-def perfTomog3d(prec, xd, t, c=1484):
+def perfTomog3d(prec, xd, t, zl, zh, c=1484):
     res = 300e-6 #350e-6  #desired spatial resolution (m)
     xf = arange2(xd[0],xd[-1]+res,res) # (m) choose reconstruction space to be directly above detector array
     yf = xf.copy() 
-    zf = arange2(11*1e-3,19*1e-3+res,res) #z location of targets, set as target plane by default. You can create a 3-D field by making this an array
+    zf = arange2(zl*1e-3,zh*1e-3+res,res) #z location of targets, set as target plane by default. You can create a 3-D field by making this an array
     Yf, Xf, Zf = np.meshgrid(yf, xf, zf)
     Zf2 = Zf**2
 
@@ -210,6 +211,16 @@ def tomPlot3D(data, x, y, z, dr):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-v", "--volumetric", action="store_true",help="generate 3D volumetric reconstruction")
+    parser.add_argument("-p", "--planar", action="store_true",help="generate 2D planar reconstruction")
+    parser.add_argument("-t", "--targetPlane", type=float,default = 15,help="the target plane in 2d reconstruction")
+    parser.add_argument("-r", "--range",type = float, nargs=2, default = [11,19],help = "the target range of z-axis in 3d reconstruction")
+    # iso-surface related, signal source related, resolution, step size
+    args = parser.parse_args()
+
+
+
     #define (x,y,z) position and radius  of spherical targets. Detector plane is at z = 0
     zTargs = 15  #target plane height (mm)
     tarInfo = 1e-3*np.array([[18, 0, zTargs, 1.5],[-18, 0, zTargs, 1.5],[9, 0, zTargs, 1.5],[-9, 0, zTargs, 1.5],[0, 0, zTargs, 1.5],[0, 12, zTargs, 4],[0, -12, zTargs, 4]]); 
@@ -228,12 +239,12 @@ if __name__ == '__main__':
         print('Generating recorded signals arising from target', jj+1, 'of', tarInfo.shape[0])
         sigs = sigs + getSignals(tarInfo[jj,:], xd, t)
     
-    isThreeD = True
-    if isThreeD:
-        pfnorm, xf, yf, zf = perfTomog3d(sigs, xd, t)
+    if args.volumetric:
+        pfnorm, xf, yf, zf = perfTomog3d(sigs, xd, t, args.range[0],args.range[1])
         tomPlot3D(pfnorm, xf, yf, zf, 6)
-    else:
-        pfnorm, xf, yf, zf = perfTomog(sigs, xd, t, 17*1e-3)
+    if args.planar:
+        pfnorm, xf, yf, zf = perfTomog(sigs, xd, t, args.targetPlane*1e-3)
         tomPlot2D(pfnorm, xf, yf, 6)
+    
 
 
