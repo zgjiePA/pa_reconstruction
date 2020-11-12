@@ -245,6 +245,8 @@ if __name__ == '__main__':
     if args.planar:
         pfnorm, xf, yf, zf = perfTomog(sigs, xd, t, args.targetPlane*1e-3)
         tomPlot2D(pfnorm, xf, yf, 6)
-    
+    if not args.volumetric and not args.planar:
+        pfnorm, xf, yf, zf = perfTomog(sigs, xd, t, zTargs*1e-3)
+        tomPlot2D(pfnorm, xf, yf, 6)
 
 
